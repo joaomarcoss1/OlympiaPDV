@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useStore } from '../store/StoreContext'
 import { hashPassword } from '../store/model'
 import { Logo } from '../components/Logo'
@@ -11,6 +11,7 @@ export default function Login() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const passwordRef = useRef(null)
 
   async function submit(e) {
     e.preventDefault()
@@ -34,7 +35,7 @@ export default function Login() {
         {users.length <= 8 && (
           <div className="user-pick">
             {users.map((u) => (
-              <button type="button" key={u.id} className={`user-pick-item ${username === u.username ? 'active' : ''}`} onClick={() => { setUsername(u.username); setError('') }}>
+              <button type="button" key={u.id} className={`user-pick-item ${username === u.username ? 'active' : ''}`} onClick={() => { setUsername(u.username); setError(''); passwordRef.current?.focus() }}>
                 <span className="avatar">{initials(u.name)}</span>
                 <span>{u.name.split(' ')[0]}</span>
               </button>
@@ -42,10 +43,10 @@ export default function Login() {
           </div>
         )}
         <Field label="Usuário">
-          <input value={username} onChange={(e) => setUsername(e.target.value)} autoCapitalize="none" autoFocus={!username} />
+          <input value={username} onChange={(e) => setUsername(e.target.value)} autoCapitalize="none" autoComplete="username" autoFocus />
         </Field>
         <Field label="Senha">
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus={!!username} key={username} />
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} ref={passwordRef} autoComplete="current-password" />
         </Field>
         {error && <div className="alert alert-danger">{error}</div>}
         <button className="btn btn-primary btn-lg btn-block">Entrar</button>
