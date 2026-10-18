@@ -86,11 +86,11 @@ export function emptyDb() {
     version: SCHEMA_VERSION,
     createdAt: nowIso(),
     settings: {
-      storeName: 'Olympia Body Fitness',
+      storeName: 'Olympia PDV',
       legalName: '',
       cnpj: '',
       phone: '',
-      instagram: '@olympiabodyfitness',
+      instagram: '',
       address: '',
       logo: null,
       receiptFooter: 'Obrigado pela preferência! Trocas em até 30 dias com etiqueta e nota.',

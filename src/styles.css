@@ -104,10 +104,9 @@ kbd {
   background-clip: text;
   color: transparent;
 }
-.logo-sub { font: 700 9.5px var(--font-brand); letter-spacing: 0.16em; color: #e9eaec; margin-top: 4px; }
+.logo-sub { font: 800 11px var(--font-brand); letter-spacing: 0.16em; color: #e9eaec; margin-top: 5px; }
 .logo-sub b {
-  margin-left: 4px;
-  padding: 1px 5px;
+  padding: 2px 7px;
   border-radius: 4px;
   background: var(--silver-grad);
   color: #111;

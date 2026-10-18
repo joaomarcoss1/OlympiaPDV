@@ -7,7 +7,7 @@ import { Field, Switch } from '../components/ui'
 // Primeira execução: cria a loja e o administrador.
 export default function Setup() {
   const { replaceDb, login } = useStore()
-  const [form, setForm] = useState({ storeName: 'Olympia Body Fitness', name: '', username: 'admin', password: '', confirm: '', sample: true })
+  const [form, setForm] = useState({ storeName: 'Olympia PDV', name: '', username: 'admin', password: '', confirm: '', sample: true })
   const [error, setError] = useState('')
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
 

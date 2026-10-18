@@ -1,4 +1,4 @@
-// Marca Olympia recriada em SVG: "O" com halter, em dourado; "PDV" em prata.
+// Marca Olympia PDV em SVG: "O" com halter em dourado; "PDV" em prata.
 export function LogoMark({ size = 36 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
@@ -32,7 +32,7 @@ export function Logo({ compact }) {
         <div className="logo-text">
           <span className="logo-word">LYMPIA</span>
           <span className="logo-sub">
-            BODY FITNESS <b>PDV</b>
+            <b>PDV</b>
           </span>
         </div>
       )}

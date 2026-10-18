@@ -1,6 +1,6 @@
 # Olympia PDV
 
-Ponto de venda da **Olympia Body Fitness**: vendas, estoque por tamanho e cor, clientes, entregas e fluxo de caixa.
+Ponto de venda **Olympia PDV**: vendas, estoque por tamanho e cor, clientes, entregas e fluxo de caixa.
 A interface é clara e limpa, com a marca em dourado, preto e prata.
 
 ## Colocar no ar (uma vez)
