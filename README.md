@@ -7,7 +7,7 @@ A interface é clara e limpa, com a marca em dourado, preto e prata.
 
 1. **Banco de dados (Supabase):** abra o projeto em [supabase.com](https://supabase.com/dashboard/project/xnfjaguuovecgbfyxglb),
    vá em **SQL Editor → New query**, cole todo o conteúdo de
-   [`supabase/migrations/20261018000000_olympia_pdv.sql`](supabase/migrations/20261018000000_olympia_pdv.sql) e clique em **Run**.
+   [`supabase/migrations/20261018000000_olympia_pdv.sql`](supabase/migrations/20261018000000_olympia_pdv.sql) e clique em **Run**; depois faça o mesmo com `20261018010000_olympia_pdv_hardening.sql`.
 2. **Chave pública:** em **Project Settings → API Keys**, copie a chave *publishable* (`sb_publishable_…`).
    No GitHub, em **Settings → Secrets and variables → Actions → Variables**, crie a variável
    `VITE_SUPABASE_ANON_KEY` com essa chave. (Sem ela o sistema pede a chave na primeira tela.)
