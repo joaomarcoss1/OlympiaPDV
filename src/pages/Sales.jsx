@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { Receipt, Printer, Truck, Ban, Download } from 'lucide-react'
+import { Receipt, Printer, Truck, Ban, Download, PencilLine } from 'lucide-react'
 import { useStore } from '../store/StoreContext'
-import { can, cancelSale, methodLabel, openSession, DELIVERY_STATUS, PAYMENT_METHODS } from '../store/model'
+import { can, cancelSale, methodLabel, openSession, variantLabel, DELIVERY_STATUS, PAYMENT_METHODS } from '../store/model'
 import { PageHeader, SearchInput, Empty, Modal, Badge, Segmented, Field, Switch, Stat } from '../components/ui'
 import { money, normalize, dateTime, pad, startOfDay, addDays, isoDateInput, formatAddress, maskPhone } from '../utils/format'
 import { printSale, printDeliverySlip } from '../utils/print'
@@ -119,7 +119,7 @@ export default function Sales() {
             </thead>
             <tbody>
               {list.map((s) => (
-                <tr key={s.id} className={`row-click ${s.status === 'cancelada' ? 'row-muted' : ''}`} onClick={() => setViewing(s.id)}>
+                <tr key={s.id} className={`row-click ${s.status !== 'concluida' ? 'row-muted' : ''}`} onClick={() => setViewing(s.id)}>
                   <td><strong>#{pad(s.number)}</strong></td>
                   <td className="nowrap">{dateTime(s.date)}</td>
                   <td className="hide-sm">{s.customerName || <span className="muted">Consumidor</span>}</td>
@@ -129,6 +129,8 @@ export default function Sales() {
                   <td>
                     {s.status === 'cancelada' ? (
                       <Badge tone="danger">Cancelada</Badge>
+                    ) : s.status === 'editada' ? (
+                      <Badge tone="neutral">Editada (substituída)</Badge>
                     ) : s.delivery ? (
                       <Badge tone={s.delivery.status === 'entregue' ? 'success' : s.delivery.status === 'em_rota' ? 'info' : 'warn'}>
                         <Truck size={12} /> {DELIVERY_STATUS.find((d) => d.id === s.delivery.status)?.label}
@@ -162,6 +164,29 @@ export function SaleDetail({ id, onClose }) {
     update((d) => { d.sales.find((s) => s.id === id).delivery.status = status })
   }
 
+  // Leva a venda para o PDV; ao concluir, a venda original é desfeita e substituída (mesmo número).
+  function startEdit() {
+    if (!session) return toast('Abra o caixa para editar a venda.', 'error')
+    const items = sale.items.map((i) => {
+      const p = db.products.find((x) => x.id === i.productId)
+      const v = p?.variants.find((x) => x.id === i.variantId)
+      return { ...i, colorHex: p?.colors.find((c) => c.name === v?.color)?.hex, image: p?.image || null, variantLabel: v ? variantLabel(v) : i.variantLabel }
+    })
+    const returned = {}
+    for (const i of sale.items) returned[i.variantId] = (returned[i.variantId] || 0) + i.qty
+    const customer = sale.customerId ? { id: sale.customerId, name: sale.customerName, phone: sale.customerPhone } : null
+    const cart = {
+      items,
+      customer,
+      discount: sale.discount.type === '%' ? { type: '%', value: sale.discount.value } : { type: 'R$', value: sale.discount.amount },
+      deliveryOn: !!sale.delivery,
+      delivery: sale.delivery ? { ...sale.delivery } : { recipient: '', phone: '', address: { cep: '', street: '', number: '', complement: '', district: '', city: '', state: '', reference: '' }, fee: 0, scheduled: '', notes: '' },
+      editing: { saleId: sale.id, number: sale.number, returned },
+    }
+    try { localStorage.setItem('olympia-pdv-cart', JSON.stringify(cart)) } catch { /* sem acesso */ }
+    window.location.hash = '/pdv'
+  }
+
   function confirmCancel() {
     try {
       update((d) => cancelSale(d, { saleId: id, userId: user.id, reason, refund: refund && !!session }))
@@ -181,7 +206,10 @@ export function SaleDetail({ id, onClose }) {
       footer={
         <>
           {sale.status === 'concluida' && can(user, 'sales.cancel') && (
-            <button className="btn btn-ghost btn-danger-text" onClick={() => setCancelling(true)}><Ban size={16} /> Cancelar venda</button>
+            <>
+              <button className="btn btn-ghost btn-danger-text" onClick={() => setCancelling(true)}><Ban size={16} /> Cancelar venda</button>
+              <button className="btn btn-outline" onClick={startEdit}><PencilLine size={16} /> Editar venda</button>
+            </>
           )}
           <span className="spacer" />
           {sale.delivery && <button className="btn btn-outline" onClick={() => printDeliverySlip(sale, db)}><Truck size={16} /> Via de entrega</button>}
@@ -194,6 +222,12 @@ export function SaleDetail({ id, onClose }) {
           Cancelada em {dateTime(sale.cancelledAt)} por {db.users.find((u) => u.id === sale.cancelledBy)?.name}. {sale.cancelReason && `Motivo: ${sale.cancelReason}`}
         </div>
       )}
+      {sale.status === 'editada' && (
+        <div className="alert alert-info">
+          Venda editada em {dateTime(sale.editedAt)} por {db.users.find((u) => u.id === sale.editedBy)?.name}. A versão atual tem o mesmo número.
+        </div>
+      )}
+      {sale.editedFrom && <div className="alert alert-info">Esta venda foi corrigida pelo administrador.</div>}
       {sale.customerName && <p><b>Cliente:</b> {sale.customerName} {sale.customerPhone && `· ${maskPhone(sale.customerPhone)}`}</p>}
       <div className="card table-card flat">
         <table className="table">
@@ -213,11 +247,13 @@ export function SaleDetail({ id, onClose }) {
       <div className="totals totals-inline">
         <div><span>Subtotal</span><span>{money(sale.subtotal)}</span></div>
         {sale.discount.amount > 0 && <div className="t-discount"><span>Desconto {sale.discount.type === '%' ? `(${sale.discount.value}%)` : ''}{sale.authorizedBy ? ` · autorizado por ${db.users.find((u) => u.id === sale.authorizedBy)?.name}` : ''}</span><span>− {money(sale.discount.amount)}</span></div>}
+        {sale.paymentDiscount?.amount > 0 && <div className="t-discount"><span>Desconto pela forma de pagamento ({sale.paymentDiscount.percent}%)</span><span>− {money(sale.paymentDiscount.amount)}</span></div>}
         {sale.deliveryFee > 0 && <div><span>Entrega</span><span>{money(sale.deliveryFee)}</span></div>}
         <div className="t-total"><span>Total</span><span>{money(sale.total)}</span></div>
         {sale.payments.map((p, k) => (
-          <div key={k}><span>{methodLabel(p.method)}{p.installments > 1 ? ` (${p.installments}x)` : ''}</span><span>{money(p.amount)}</span></div>
+          <div key={k}><span>{methodLabel(p.method)}{p.brand ? ` ${p.brand}` : ''}{p.installments > 1 ? ` (${p.installments}x)` : ''}</span><span>{money(p.amount)}</span></div>
         ))}
+        {can(user, 'settings') && sale.fees > 0 && <div className="muted"><span>Taxas da maquininha</span><span>− {money(sale.fees)} (líquido {money(sale.total - sale.fees)})</span></div>}
         {sale.change > 0 && <div><span>Troco</span><span>{money(sale.change)}</span></div>}
       </div>
       {sale.notes && <p><b>Obs.:</b> {sale.notes}</p>}

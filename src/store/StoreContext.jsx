@@ -12,6 +12,7 @@ function migrate(data) {
   // Garante que chaves novas existam em bancos criados por versões anteriores.
   const base = emptyDb()
   const merged = { ...base, ...data, settings: { ...base.settings, ...(data.settings || {}) } }
+  if (!merged.productTypes?.length) merged.productTypes = base.productTypes
   merged.version = SCHEMA_VERSION
   return merged
 }

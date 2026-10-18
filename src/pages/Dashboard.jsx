@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { ShoppingCart, TrendingUp, Receipt, Wallet, Truck, AlertTriangle, Trophy } from 'lucide-react'
 import { useStore } from '../store/StoreContext'
-import { openSession, sessionSummary, PAYMENT_METHODS, can } from '../store/model'
+import { openSession, sessionSummary, PAYMENT_METHODS, can, lowStockLimit } from '../store/model'
 import { PageHeader, Stat, Badge, Empty } from '../components/ui'
 import { money, startOfDay, addDays, pad, formatAddress } from '../utils/format'
 
@@ -46,10 +46,10 @@ export default function Dashboard() {
     const out = []
     for (const p of db.products) {
       if (!p.active) continue
-      for (const v of p.variants) if (v.stock <= db.settings.lowStockThreshold) out.push({ p, v })
+      for (const v of p.variants) if (v.stock <= lowStockLimit(p, db.settings)) out.push({ p, v })
     }
     return out.sort((a, b) => a.v.stock - b.v.stock).slice(0, 8)
-  }, [db.products, db.settings.lowStockThreshold])
+  }, [db.products, db.settings])
 
   const deliveries = done.filter((s) => s.delivery && s.delivery.status !== 'entregue').slice(-6).reverse()
   const byMethodToday = Object.fromEntries(PAYMENT_METHODS.map((m) => [m.id, 0]))

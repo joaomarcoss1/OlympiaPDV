@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js'
 
 export const DEFAULT_URL = 'https://xnfjaguuovecgbfyxglb.supabase.co'
 const CONFIG_KEY = 'olympia-pdv-cloud'
-export const COLLECTIONS = ['users', 'categories', 'brands', 'products', 'stockMoves', 'customers', 'sales', 'cashSessions', 'cashMoves']
+export const COLLECTIONS = ['users', 'categories', 'brands', 'products', 'stockMoves', 'customers', 'sales', 'cashSessions', 'cashMoves', 'productTypes']
 const SETTINGS_KEY = 'settings|main'
 
 export function readConfig() {

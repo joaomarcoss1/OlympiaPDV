@@ -34,6 +34,8 @@ function header(settings) {
     <div class="center">
       ${settings.logo ? `<img class="logo" src="${settings.logo}" alt="" />` : ''}
       <div class="store">${esc(settings.storeName)}</div>
+    </div>
+    <div>
       ${settings.legalName ? `<div class="muted">${esc(settings.legalName)}</div>` : ''}
       ${settings.cnpj ? `<div class="muted">CNPJ ${esc(settings.cnpj)}</div>` : ''}
       ${settings.address ? `<div class="muted">${esc(settings.address)}</div>` : ''}
@@ -85,6 +87,7 @@ export function receiptHtml(sale, db) {
       <hr />
       <div class="row"><span>Subtotal (${sale.items.reduce((s, i) => s + i.qty, 0)} itens)</span><span>${money(sale.subtotal)}</span></div>
       ${sale.discount?.amount ? `<div class="row"><span>Desconto${sale.discount.type === '%' ? ` (${sale.discount.value}%)` : ''}</span><span>- ${money(sale.discount.amount)}</span></div>` : ''}
+      ${sale.paymentDiscount?.amount ? `<div class="row"><span>Desc. forma de pagamento (${sale.paymentDiscount.percent}%)</span><span>- ${money(sale.paymentDiscount.amount)}</span></div>` : ''}
       ${sale.deliveryFee ? `<div class="row"><span>Taxa de entrega</span><span>${money(sale.deliveryFee)}</span></div>` : ''}
       <div class="row total"><span>TOTAL</span><span>${money(sale.total)}</span></div>
       <hr />

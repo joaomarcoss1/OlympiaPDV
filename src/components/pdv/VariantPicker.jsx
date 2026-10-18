@@ -48,7 +48,7 @@ export default function VariantPicker({ product, brandName, inCart, allowNegativ
                 <strong>{money(product.price * qty)}</strong>
               </>
             ) : (
-              <span className="muted">Escolha cor e tamanho</span>
+              <span className="muted">Escolha uma opção</span>
             )}
           </div>
           <Stepper value={qty} onChange={setQty} min={1} max={Math.max(1, max)} />
@@ -62,7 +62,7 @@ export default function VariantPicker({ product, brandName, inCart, allowNegativ
         <Thumb src={product.image} name={product.name} size={64} />
         <div>
           <div className="picker-price">{money(product.price)}</div>
-          <div className="muted small">Clique no tamanho desejado. O número mostra quantas peças há em estoque.</div>
+          <div className="muted small">Escolha a opção desejada. O número mostra quantas unidades há em estoque.</div>
         </div>
       </div>
       <div className="matrix-wrap">
@@ -80,7 +80,7 @@ export default function VariantPicker({ product, brandName, inCart, allowNegativ
               <tr key={color.name}>
                 <th>
                   <span className="color-cell">
-                    <ColorDot hex={color.hex} /> {color.name}
+                    {color.hex && <ColorDot hex={color.hex} />} {color.name}
                   </span>
                 </th>
                 {cells.map((v, i) => {

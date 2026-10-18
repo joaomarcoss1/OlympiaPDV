@@ -81,6 +81,18 @@ export async function hashPassword(password) {
 // ---------------------------------------------------------------------------
 // Estrutura inicial
 // ---------------------------------------------------------------------------
+// Tipos de produto: cada um define o nome das duas variações (ex.: Tamanho/Cor, Peso/Sabor).
+export const DEFAULT_TYPES = [
+  { id: 'type-roupas', name: 'Roupas', labels: { size: 'Tamanho', color: 'Cor' } },
+  { id: 'type-barrinhas', name: 'Barrinhas', labels: { size: 'Peso', color: 'Sabor' } },
+  { id: 'type-suplementos', name: 'Suplementos', labels: { size: 'Peso', color: 'Sabor' } },
+  { id: 'type-acessorios', name: 'Acessórios', labels: { size: 'Tamanho', color: 'Cor' } },
+]
+export const productLabels = (p) => ({ size: 'Tamanho', color: 'Cor', ...(p?.labels || {}) })
+export const isColorLabel = (label) => normalize(label).startsWith('cor')
+export const lowStockLimit = (p, settings) => (p?.minStock ?? '') !== '' && p?.minStock != null ? Number(p.minStock) : settings.lowStockThreshold
+export const cardFeeKey = (brand, method, installments) => (method === 'credito' ? `${brand}|credito|${installments || 1}` : `${brand}|${method}`)
+
 export function emptyDb() {
   return {
     version: SCHEMA_VERSION,
@@ -102,7 +114,12 @@ export function emptyDb() {
       lowStockThreshold: 2,
       maxInstallments: 6,
       defaultDeliveryFee: 0,
-      enabledMethods: PAYMENT_METHODS.map((m) => m.id),
+      enabledMethods: ['dinheiro', 'pix', 'credito', 'debito'],
+      cardBrands: ['Visa', 'Mastercard', 'Elo', 'Hipercard', 'American Express'],
+      // Taxas da maquininha em %: "Visa|debito", "Visa|credito|3" (crédito em 3x)
+      cardFees: {},
+      // Desconto automático quando TODO o pagamento é feito com as formas listadas.
+      paymentDiscounts: [{ id: 'pd-pix-dinheiro', percent: 10, methods: ['pix', 'dinheiro'], active: false }],
       nextSaleNumber: 1,
       nextProductCode: 1,
     },
@@ -115,6 +132,7 @@ export function emptyDb() {
     sales: [],
     cashSessions: [],
     cashMoves: [],
+    productTypes: DEFAULT_TYPES.map((t) => ({ ...t, labels: { ...t.labels } })),
   }
 }
 
@@ -166,6 +184,7 @@ export function seedCatalog(db, userId) {
       cost: s.cost,
       description: '',
       image: null,
+      typeId: s.subcategoryId === garrafas.id ? 'type-acessorios' : 'type-roupas',
       sizes: s.sizes,
       colors: s.colors.map(color),
     })
@@ -228,6 +247,10 @@ export function createProduct(db, data) {
     cost: round2(data.cost),
     description: data.description || '',
     image: data.image || null,
+    typeId: data.typeId || null,
+    labels: data.labels || { size: 'Tamanho', color: 'Cor' },
+    simple: !!data.simple,
+    minStock: data.minStock ?? null,
     sizes: data.sizes,
     colors: data.colors,
     variants: [],
@@ -250,7 +273,7 @@ export function findVariant(db, productId, variantId) {
 
 export function variantLabel(v) {
   if (!v) return ''
-  return [v.color, v.size !== 'U' ? v.size : null].filter(Boolean).join(' / ')
+  return [v.color !== 'Único' ? v.color : null, v.size !== 'U' ? v.size : null].filter(Boolean).join(' / ')
 }
 
 // entries: [{ variantId, qty }] — qty com sinal (positivo entra, negativo sai).
@@ -309,12 +332,16 @@ export function sessionSummary(db, sessionId) {
   const moves = db.cashMoves.filter((m) => m.sessionId === sessionId)
   const byMethod = Object.fromEntries(PAYMENT_METHODS.map((m) => [m.id, 0]))
   let suprimentos = 0
+  let fees = 0
   let sangrias = 0
   let estornos = 0
   let cashIn = 0
   let cashOut = 0
   for (const m of moves) {
-    if (m.type === 'venda') byMethod[m.method] = round2((byMethod[m.method] || 0) + m.amount)
+    if (m.type === 'venda') {
+      byMethod[m.method] = round2((byMethod[m.method] || 0) + m.amount)
+      fees += m.fee || 0
+    }
     if (m.type === 'estorno') {
       byMethod[m.method] = round2((byMethod[m.method] || 0) - m.amount)
       estornos += m.amount
@@ -336,6 +363,7 @@ export function sessionSummary(db, sessionId) {
     suprimentos: round2(suprimentos),
     sangrias: round2(sangrias),
     estornos: round2(estornos),
+    fees: round2(fees),
     salesTotal,
     salesCount,
     expectedCash,
@@ -376,15 +404,29 @@ export function cartTotals(cart, discount, deliveryFee = 0) {
 }
 
 // number: número reservado no servidor (vários caixas); sem ele, usa o contador local.
-export function finalizeSale(db, { cart, discount, customer, delivery, payments, userId, notes, authorizedBy, number: reserved }) {
+// paymentDiscount: desconto automático pela forma de pagamento ({ percent, amount }).
+// replaces: id da venda que está sendo editada pelo administrador (é desfeita e substituída).
+export function finalizeSale(db, { cart, discount, customer, delivery, payments, userId, notes, authorizedBy, number: reserved, paymentDiscount, replaces }) {
   const session = openSession(db)
   if (!session) throw new Error('Abra o caixa antes de vender.')
   if (!cart.length) throw new Error('Carrinho vazio.')
   const totals = cartTotals(cart, discount, delivery?.fee)
+  const payDisc = round2(paymentDiscount?.amount || 0)
+  const total = round2(totals.total - payDisc)
   const paid = round2(payments.reduce((s, p) => s + p.amount, 0))
-  if (paid + 0.001 < totals.total) throw new Error('Pagamento insuficiente.')
+  if (paid + 0.001 < total) throw new Error('Pagamento insuficiente.')
 
-  let number = reserved
+  let original = null
+  if (replaces) {
+    original = db.sales.find((x) => x.id === replaces)
+    if (!original || original.status !== 'concluida') throw new Error('A venda original não pode mais ser editada.')
+    reverseSale(db, original, userId, `Edição venda #${original.number}`, true)
+    original.status = 'editada'
+    original.editedAt = nowIso()
+    original.editedBy = userId
+  }
+
+  let number = original?.number || reserved
   if (!number) {
     number = Math.max(db.settings.nextSaleNumber || 1, ...db.sales.map((s) => s.number + 1))
     db.settings.nextSaleNumber = number + 1
@@ -413,14 +455,26 @@ export function finalizeSale(db, { cart, discount, customer, delivery, payments,
     })),
     subtotal: totals.subtotal,
     discount: { type: discount?.type || 'R$', value: Number(discount?.value) || 0, amount: totals.discountAmount },
+    paymentDiscount: payDisc ? { percent: paymentDiscount.percent, amount: payDisc } : null,
     deliveryFee: totals.deliveryFee,
-    total: totals.total,
-    payments: payments.map((p) => ({ method: p.method, amount: round2(p.amount), received: p.received ? round2(p.received) : undefined, change: p.change ? round2(p.change) : undefined, installments: p.installments || undefined })),
+    total,
+    payments: payments.map((p) => ({
+      method: p.method,
+      amount: round2(p.amount),
+      received: p.received ? round2(p.received) : undefined,
+      change: p.change ? round2(p.change) : undefined,
+      installments: p.installments || undefined,
+      brand: p.brand || undefined,
+      feePercent: p.feePercent || undefined,
+      fee: p.fee ? round2(p.fee) : undefined,
+    })),
+    fees: round2(payments.reduce((s, p) => s + (p.fee || 0), 0)),
     change,
     delivery: delivery ? { ...delivery, status: 'pendente' } : null,
     notes: notes || '',
     authorizedBy: authorizedBy || null,
     status: 'concluida',
+    editedFrom: original?.id || undefined,
   }
   db.sales.push(sale)
 
@@ -428,7 +482,9 @@ export function finalizeSale(db, { cart, discount, customer, delivery, payments,
     applyStock(db, item.productId, [{ variantId: item.variantId, qty: -item.qty }], 'venda', `Venda #${number}`, userId, { saleId: sale.id })
   }
   for (const p of sale.payments) {
-    addCashMove(db, { sessionId: session.id, type: 'venda', method: p.method, amount: p.amount, description: `Venda #${number}`, userId, saleId: sale.id })
+    // Cartão: entra no caixa o valor líquido (já descontada a taxa da maquininha).
+    const move = addCashMove(db, { sessionId: session.id, type: 'venda', method: p.method, amount: p.amount - (p.fee || 0), description: `Venda #${number}`, userId, saleId: sale.id })
+    if (p.fee) Object.assign(move, { gross: p.amount, fee: p.fee })
   }
   if (customer?.id) {
     const c = db.customers.find((x) => x.id === customer.id)
@@ -437,22 +493,38 @@ export function finalizeSale(db, { cart, discount, customer, delivery, payments,
   return sale
 }
 
-export function cancelSale(db, { saleId, userId, reason, refund }) {
-  const sale = db.sales.find((s) => s.id === saleId)
-  if (!sale || sale.status === 'cancelada') throw new Error('Venda não encontrada ou já cancelada.')
-  sale.status = 'cancelada'
-  sale.cancelledAt = nowIso()
-  sale.cancelledBy = userId
-  sale.cancelReason = reason || ''
+// Devolve o estoque e (opcional) lança o estorno no caixa aberto.
+function reverseSale(db, sale, userId, reason, refund) {
   for (const item of sale.items) {
-    applyStock(db, item.productId, [{ variantId: item.variantId, qty: item.qty }], 'cancelamento', `Cancelamento venda #${sale.number}`, userId, { saleId })
+    applyStock(db, item.productId, [{ variantId: item.variantId, qty: item.qty }], 'cancelamento', reason, userId, { saleId: sale.id })
   }
   const session = openSession(db)
   if (refund && session) {
     for (const p of sale.payments) {
-      addCashMove(db, { sessionId: session.id, type: 'estorno', method: p.method, amount: p.amount, description: `Estorno venda #${sale.number}`, userId, saleId })
+      addCashMove(db, { sessionId: session.id, type: 'estorno', method: p.method, amount: p.amount - (p.fee || 0), description: `Estorno venda #${sale.number}`, userId, saleId: sale.id })
     }
     sale.refundedInSession = session.id
   }
+}
+
+export function cancelSale(db, { saleId, userId, reason, refund }) {
+  const sale = db.sales.find((s) => s.id === saleId)
+  if (!sale || sale.status !== 'concluida') throw new Error('Venda não encontrada ou já cancelada.')
+  sale.status = 'cancelada'
+  sale.cancelledAt = nowIso()
+  sale.cancelledBy = userId
+  sale.cancelReason = reason || ''
+  reverseSale(db, sale, userId, `Cancelamento venda #${sale.number}`, refund)
   return sale
+}
+
+// Variações que ficaram com estoque baixo depois de uma venda (para avisar o vendedor).
+export function lowStockAfter(db, items) {
+  const out = []
+  for (const i of items) {
+    const p = db.products.find((x) => x.id === i.productId)
+    const v = p?.variants.find((x) => x.id === i.variantId)
+    if (v && v.stock <= lowStockLimit(p, db.settings)) out.push(`${p.name}${variantLabel(v) ? ` ${variantLabel(v)}` : ''} (${v.stock})`)
+  }
+  return out
 }

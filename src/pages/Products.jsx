@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Plus, Copy, Pencil, Shirt, Eye } from 'lucide-react'
 import { useStore } from '../store/StoreContext'
-import { can, productStock } from '../store/model'
+import { can, productStock, productLabels, lowStockLimit } from '../store/model'
 import { PageHeader, SearchInput, Thumb, Badge, Empty, ColorDot, Modal } from '../components/ui'
 import ProductForm from '../components/ProductForm'
 import VariantMatrix, { cellKey } from '../components/VariantMatrix'
@@ -19,7 +19,6 @@ export default function Products() {
 
   const brands = useMemo(() => Object.fromEntries(db.brands.map((b) => [b.id, b.name])), [db.brands])
   const cats = useMemo(() => Object.fromEntries(db.categories.map((c) => [c.id, c.name])), [db.categories])
-  const low = db.settings.lowStockThreshold
 
   const list = useMemo(() => {
     const t = normalize(q)
@@ -92,7 +91,7 @@ export default function Products() {
             <tbody>
               {list.map((p) => {
                 const stock = productStock(p)
-                const lowCount = p.variants.filter((v) => v.stock <= low).length
+                const lowCount = p.variants.filter((v) => v.stock <= lowStockLimit(p, db.settings)).length
                 return (
                   <tr key={p.id} className="row-click" onClick={() => (canEdit ? setEditing({ product: p }) : setViewing(p))}>
                     <td>
@@ -147,7 +146,7 @@ export function StockGridModal({ product, brand, onClose }) {
   const values = Object.fromEntries(product.variants.map((v) => [cellKey(v.color, v.size), v.stock || 0]))
   return (
     <Modal title={product.name} subtitle={[brand, product.sku, money(product.price)].filter(Boolean).join(' · ')} onClose={onClose} size="md">
-      <VariantMatrix sizes={product.sizes} colors={product.colors} values={values} onChange={() => {}} readOnly />
+      <VariantMatrix sizes={product.sizes} colors={product.colors} labels={productLabels(product)} values={values} onChange={() => {}} readOnly />
     </Modal>
   )
 }

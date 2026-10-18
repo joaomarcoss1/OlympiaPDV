@@ -4,7 +4,7 @@ export const cellKey = (color, size) => `${color}|${size}`
 
 // Grade cor × tamanho com quantidades editáveis.
 // values: { "Preto|M": 3 }  ·  hints: quantidades atuais exibidas em cada célula (opcional)
-export default function VariantMatrix({ sizes, colors, values, onChange, hints, readOnly, signedLabel }) {
+export default function VariantMatrix({ sizes, colors, values, onChange, hints, readOnly, signedLabel, labels = { size: 'Tam.', color: 'Cor' } }) {
   const get = (c, s) => values[cellKey(c, s)] ?? 0
   const set = (c, s, raw) => {
     const clean = raw.replace(/\D/g, '')
@@ -27,7 +27,7 @@ export default function VariantMatrix({ sizes, colors, values, onChange, hints, 
       <table className="matrix">
         <thead>
           <tr>
-            <th className="matrix-corner">Cor \ Tam.</th>
+            <th className="matrix-corner">{labels.color} \ {labels.size}</th>
             {sizes.map((s) => (
               <th key={s}>
                 {readOnly ? (
@@ -47,10 +47,10 @@ export default function VariantMatrix({ sizes, colors, values, onChange, hints, 
             <tr key={c.name}>
               <th>
                 {readOnly ? (
-                  <span className="color-cell"><ColorDot hex={c.hex} /> {c.name}</span>
+                  <span className="color-cell">{c.hex && <ColorDot hex={c.hex} />} {c.name}</span>
                 ) : (
                   <button type="button" className="matrix-head-btn color-cell" title="Copiar o 1º valor desta linha para todos os tamanhos" onClick={() => fillRow(c, get(c.name, sizes[0]))}>
-                    <ColorDot hex={c.hex} /> {c.name}
+                    {c.hex && <ColorDot hex={c.hex} />} {c.name}
                   </button>
                 )}
               </th>

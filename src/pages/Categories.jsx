@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Pencil, Trash2, Check, X, CornerDownRight, FolderTree, Tag } from 'lucide-react'
+import { Plus, Pencil, Trash2, Check, X, CornerDownRight, FolderTree, Tag, Shapes } from 'lucide-react'
 import { useStore } from '../store/StoreContext'
 import { uid } from '../store/model'
 import { PageHeader, confirmDialog } from '../components/ui'
@@ -64,6 +64,18 @@ export default function Categories() {
     toast('Categoria excluída.')
   }
 
+  const addType = (name) => update((d) => { d.productTypes.push({ id: uid(), name, labels: { size: 'Tamanho', color: 'Cor' } }) })
+  const setTypeField = (id, patch) => update((d) => { Object.assign(d.productTypes.find((t) => t.id === id), patch) })
+  async function deleteType(t) {
+    const n = db.products.filter((p) => p.typeId === t.id).length
+    const ok = await confirmDialog({ title: 'Excluir tipo?', message: `Excluir o tipo “${t.name}”?${n ? ` ${n} produto(s) ficarão sem tipo (as variações deles continuam).` : ''}`, confirmLabel: 'Excluir', danger: true })
+    if (!ok) return
+    update((d) => {
+      d.productTypes = d.productTypes.filter((x) => x.id !== t.id)
+      for (const p of d.products) if (p.typeId === t.id) p.typeId = null
+    })
+  }
+
   const addBrand = (name) => {
     if (db.brands.some((b) => b.name.toLowerCase() === name.toLowerCase())) return toast('Essa marca já existe.', 'error')
     update((d) => { d.brands.push({ id: uid(), name }) })
@@ -82,6 +94,22 @@ export default function Categories() {
   return (
     <div className="page">
       <PageHeader title="Categorias e marcas" subtitle="Organize o catálogo para encontrar tudo rápido no PDV." />
+      <section className="card pad">
+        <h3 className="card-title"><Shapes size={18} /> Tipos de produto e nomes das variações</h3>
+        <p className="muted small">Ao cadastrar um produto e escolher o tipo, as variações já vêm com estes nomes (ex.: Roupas = Tamanho e Cor; Barrinhas = Peso e Sabor).</p>
+        <AddInline placeholder="Novo tipo (ex.: Pré-treino)" onAdd={addType} />
+        <div className="type-list">
+          {(db.productTypes || []).map((t) => (
+            <div key={t.id} className="type-row">
+              <input className="type-name" defaultValue={t.name} onBlur={(e) => e.target.value.trim() && e.target.value !== t.name && setTypeField(t.id, { name: e.target.value.trim() })} aria-label="Nome do tipo" />
+              <label>Variação 1 <input defaultValue={t.labels.size} onBlur={(e) => e.target.value.trim() && setTypeField(t.id, { labels: { ...t.labels, size: e.target.value.trim() } })} /></label>
+              <label>Variação 2 <input defaultValue={t.labels.color} onBlur={(e) => e.target.value.trim() && setTypeField(t.id, { labels: { ...t.labels, color: e.target.value.trim() } })} /></label>
+              <span className="muted small">{db.products.filter((p) => p.typeId === t.id).length} produtos</span>
+              <button className="icon-btn" title="Excluir" onClick={() => deleteType(t)}><Trash2 size={15} /></button>
+            </div>
+          ))}
+        </div>
+      </section>
       <div className="two-col">
         <section className="card pad">
           <h3 className="card-title"><FolderTree size={18} /> Categorias e subcategorias</h3>

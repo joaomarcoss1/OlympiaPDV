@@ -3,7 +3,7 @@ import {
   LayoutDashboard, ShoppingCart, Receipt, Shirt, Boxes, FolderTree, Users, Wallet, UserCog, Settings, LogOut, Menu, X, Cloud, CloudOff, RefreshCw,
 } from 'lucide-react'
 import { useStore } from './store/StoreContext'
-import { can, openSession } from './store/model'
+import { can, openSession, lowStockLimit } from './store/model'
 import { Logo } from './components/Logo'
 import { Toasts, ConfirmHost } from './components/ui'
 import { initials } from './utils/format'
@@ -65,6 +65,7 @@ export default function App() {
   const current = allowed.find((r) => r.id === route) || allowed.find((r) => r.id === 'pdv') || allowed[0]
   const Page = current.page
   const session = openSession(db)
+  const lowCount = db.products.filter((p) => p.active).reduce((n, p) => n + p.variants.filter((v) => v.stock <= lowStockLimit(p, db.settings)).length, 0)
 
   return (
     <div className={`app ${current.id === 'pdv' ? 'app-pdv' : ''}`}>
@@ -79,6 +80,7 @@ export default function App() {
               <a href={`#/${r.id}`} className={`nav-item ${current.id === r.id ? 'active' : ''} ${r.highlight ? 'nav-highlight' : ''}`}>
                 <r.icon size={19} />
                 <span>{r.label}</span>
+                {r.id === 'estoque' && lowCount > 0 && <span className="nav-badge" title="Variações com estoque baixo">{lowCount}</span>}
                 {r.id === 'caixa' && <span className={`dot ${session ? 'dot-on' : 'dot-off'}`} title={session ? 'Caixa aberto' : 'Caixa fechado'} />}
               </a>
             </div>

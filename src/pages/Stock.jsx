@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { PackagePlus, PackageMinus, ClipboardCheck, Boxes, History } from 'lucide-react'
+import { PackagePlus, PackageMinus, ClipboardCheck, Boxes, History, ChevronRight } from 'lucide-react'
 import { useStore } from '../store/StoreContext'
-import { can, applyStock, STOCK_MOVE_TYPES } from '../store/model'
+import { can, applyStock, STOCK_MOVE_TYPES, lowStockLimit, productStock, productLabels } from '../store/model'
 import { PageHeader, SearchInput, Segmented, Badge, Empty, Modal, Field, Thumb, ColorDot, Stat } from '../components/ui'
 import VariantMatrix, { cellKey } from '../components/VariantMatrix'
 import { money, normalize, dateTime } from '../utils/format'
@@ -21,7 +21,7 @@ export default function Stock() {
   const totalUnits = db.products.filter((p) => p.active).reduce((s, p) => s + p.variants.reduce((a, v) => a + Math.max(0, v.stock), 0), 0)
   const costValue = db.products.filter((p) => p.active).reduce((s, p) => s + p.variants.reduce((a, v) => a + Math.max(0, v.stock) * (p.cost || 0), 0), 0)
   const saleValue = db.products.filter((p) => p.active).reduce((s, p) => s + p.variants.reduce((a, v) => a + Math.max(0, v.stock) * p.price, 0), 0)
-  const lowCount = db.products.filter((p) => p.active).reduce((s, p) => s + p.variants.filter((v) => v.stock <= db.settings.lowStockThreshold).length, 0)
+  const lowCount = db.products.filter((p) => p.active).reduce((s, p) => s + p.variants.filter((v) => v.stock <= lowStockLimit(p, db.settings)).length, 0)
 
   return (
     <div className="page">
@@ -40,7 +40,7 @@ export default function Stock() {
       />
       <div className="stats">
         <Stat label="Peças em estoque" value={totalUnits} />
-        <Stat label="Variações com estoque baixo" value={lowCount} tone={lowCount ? 'warn' : undefined} hint={`até ${db.settings.lowStockThreshold} un`} />
+        <Stat label="Variações com estoque baixo" value={lowCount} tone={lowCount ? 'warn' : undefined} hint="conforme o mínimo de cada produto" />
         {canEdit && <Stat label="Valor em estoque (custo)" value={money(costValue)} />}
         <Stat label="Valor em estoque (venda)" value={money(saleValue)} />
       </div>
@@ -62,47 +62,62 @@ function Position() {
   const { db } = useStore()
   const [q, setQ] = useState('')
   const [onlyLow, setOnlyLow] = useState(false)
-  const low = db.settings.lowStockThreshold
+  const [open, setOpen] = useState(null)
   const rows = useMemo(() => {
     const t = normalize(q)
-    const out = []
-    for (const p of db.products) {
-      if (!p.active) continue
-      for (const v of p.variants) {
-        if (onlyLow && v.stock > low) continue
-        if (t && !normalize(`${p.name} ${v.sku} ${v.color} ${v.size}`).includes(t)) continue
-        out.push({ p, v, hex: p.colors.find((c) => c.name === v.color)?.hex })
-      }
-    }
-    return out.sort((a, b) => a.p.name.localeCompare(b.p.name) || a.v.stock - b.v.stock)
-  }, [db.products, q, onlyLow, low])
+    return db.products
+      .filter((p) => p.active)
+      .map((p) => {
+        const limit = lowStockLimit(p, db.settings)
+        return { p, total: productStock(p), low: p.variants.filter((v) => v.stock <= limit).length, limit }
+      })
+      .filter((r) => (!onlyLow || r.low > 0) && (!t || normalize(`${r.p.name} ${r.p.sku} ${r.p.variants.map((v) => `${v.sku} ${v.color} ${v.size}`).join(' ')}`).includes(t)))
+      .sort((a, b) => a.p.name.localeCompare(b.p.name))
+  }, [db.products, db.settings, q, onlyLow])
 
   return (
     <>
       <div className="filters">
         <SearchInput value={q} onChange={setQ} placeholder="Produto, cor, tamanho ou código" />
-        <Segmented size="sm" value={onlyLow ? 'low' : 'all'} onChange={(v) => setOnlyLow(v === 'low')} options={[{ value: 'all', label: 'Todas' }, { value: 'low', label: 'Estoque baixo' }]} />
+        <Segmented size="sm" value={onlyLow ? 'low' : 'all'} onChange={(v) => setOnlyLow(v === 'low')} options={[{ value: 'all', label: 'Todos' }, { value: 'low', label: 'Com estoque baixo' }]} />
       </div>
       {rows.length === 0 ? (
         <Empty icon={<Boxes size={28} />} title="Nada encontrado" />
       ) : (
-        <div className="card table-card">
-          <table className="table">
-            <thead>
-              <tr><th>Produto</th><th>Cor</th><th>Tam.</th><th className="hide-sm">Código</th><th className="num">Estoque</th></tr>
-            </thead>
-            <tbody>
-              {rows.map(({ p, v, hex }) => (
-                <tr key={v.id}>
-                  <td><div className="cell-product"><Thumb src={p.image} name={p.name} size={34} /><strong>{p.name}</strong></div></td>
-                  <td><span className="color-cell"><ColorDot hex={hex} /> {v.color}</span></td>
-                  <td>{v.size === 'U' ? 'Único' : v.size}</td>
-                  <td className="hide-sm muted">{v.sku}</td>
-                  <td className="num">{v.stock <= 0 ? <Badge tone="danger">{v.stock}</Badge> : v.stock <= low ? <Badge tone="warn">{v.stock}</Badge> : <strong>{v.stock}</strong>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="card stock-groups">
+          {rows.map(({ p, total, low, limit }) => {
+            const isOpen = open === p.id
+            return (
+              <div key={p.id} className={`stock-group ${isOpen ? 'open' : ''}`}>
+                <button type="button" className="stock-group-head" onClick={() => setOpen(isOpen ? null : p.id)} aria-expanded={isOpen}>
+                  <ChevronRight size={18} className="chev" />
+                  <Thumb src={p.image} name={p.name} size={36} />
+                  <span className="grow">
+                    <strong>{p.name}</strong>
+                    <span className="muted small"> {p.sku}{p.simple ? '' : ` · ${p.variants.length} variações`}</span>
+                  </span>
+                  {low > 0 && <Badge tone="warn">{low} {low === 1 ? 'baixa' : 'baixas'}</Badge>}
+                  <Badge tone={total <= 0 ? 'danger' : 'neutral'}>{total} em estoque</Badge>
+                </button>
+                {isOpen && (
+                  <div className="stock-group-body">
+                    {p.simple ? (
+                      <p>Quantidade: <strong>{total}</strong> · aviso com {limit} un ou menos</p>
+                    ) : (
+                      <VariantMatrix
+                        sizes={p.sizes}
+                        colors={p.colors}
+                        labels={productLabels(p)}
+                        values={Object.fromEntries(p.variants.map((v) => [cellKey(v.color, v.size), v.stock || 0]))}
+                        onChange={() => {}}
+                        readOnly
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </>
@@ -227,7 +242,7 @@ function StockMoveModal({ type, onClose }) {
             <button className="btn btn-ghost btn-sm" onClick={() => setProductId(null)}>Trocar produto</button>
           </div>
           <p className="muted small">{cfg.help}</p>
-          <VariantMatrix sizes={product.sizes} colors={product.colors} values={values} onChange={setValues} hints={type === 'ajuste' ? undefined : hints} />
+          <VariantMatrix sizes={product.sizes} colors={product.colors} labels={productLabels(product)} values={values} onChange={setValues} hints={type === 'ajuste' ? undefined : hints} />
           <div className="form-grid mt">
             <Field label="Motivo">
               <select value={reason} onChange={(e) => setReason(e.target.value)}>

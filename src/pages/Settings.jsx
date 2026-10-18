@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
-import { Store, Printer, CreditCard, ShieldAlert, Database, ImagePlus, Download, Upload, Cloud, UserPlus, LogOut } from 'lucide-react'
+import { Store, Printer, CreditCard, ShieldAlert, Database, ImagePlus, Download, Upload, Cloud, UserPlus, LogOut, Percent, BadgePercent, Trash2, Plus, X } from 'lucide-react'
 import { useStore } from '../store/StoreContext'
-import { PAYMENT_METHODS, openSession } from '../store/model'
+import { PAYMENT_METHODS, openSession, cardFeeKey } from '../store/model'
 import { PageHeader, Field, Switch, Segmented, MoneyInput, confirmDialog } from '../components/ui'
 import { resizeImage } from '../utils/image'
 import { printHtml, receiptHtml } from '../utils/print'
@@ -121,6 +121,12 @@ export default function SettingsPage() {
     toast('Conta liberada para acessar a loja.')
   }
 
+  const setFee = (k, raw) => {
+    const clean = raw.replace(',', '.').replace(/[^\d.]/g, '')
+    setS((x) => ({ ...x, cardFees: { ...(x.cardFees || {}), [k]: clean } }))
+  }
+  const setRule = (id, patch) => setS((x) => ({ ...x, paymentDiscounts: x.paymentDiscounts.map((r) => (r.id === id ? { ...r, ...patch } : r)) }))
+
   const toggleMethod = (id) => setS((x) => ({ ...x, enabledMethods: x.enabledMethods.includes(id) ? x.enabledMethods.filter((m) => m !== id) : [...x.enabledMethods, id] }))
 
   return (
@@ -192,6 +198,62 @@ export default function SettingsPage() {
       </section>
 
       <section className="card pad">
+        <h3 className="card-title"><Percent size={18} /> Taxas da maquininha</h3>
+        <p className="muted small">Informe a taxa (%) de cada bandeira. Na venda, ao escolher a bandeira e as parcelas, o sistema desconta a taxa e lança no caixa o valor líquido.</p>
+        <Field label="Bandeiras">
+          <BrandsEditor brands={s.cardBrands || []} onChange={(cardBrands) => setS((x) => ({ ...x, cardBrands }))} />
+        </Field>
+        <div className="matrix-wrap">
+          <table className="matrix fee-table">
+            <thead>
+              <tr>
+                <th className="matrix-corner">Bandeira</th>
+                <th>Débito</th>
+                {Array.from({ length: s.maxInstallments || 1 }, (_, i) => <th key={i}>Crédito {i + 1}x</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {(s.cardBrands || []).map((b) => (
+                <tr key={b}>
+                  <th>{b}</th>
+                  {[cardFeeKey(b, 'debito'), ...Array.from({ length: s.maxInstallments || 1 }, (_, i) => cardFeeKey(b, 'credito', i + 1))].map((k) => (
+                    <td key={k}>
+                      <div className="matrix-cell">
+                        <input inputMode="decimal" value={s.cardFees?.[k] ?? ''} placeholder="0" onChange={(e) => setFee(k, e.target.value)} aria-label={`Taxa ${k}`} />
+                      </div>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="card pad">
+        <h3 className="card-title"><BadgePercent size={18} /> Desconto por forma de pagamento</h3>
+        <p className="muted small">O desconto entra sozinho na hora de pagar quando <b>todo</b> o pagamento for feito só com as formas marcadas (ex.: 10% no PIX, no dinheiro ou PIX + dinheiro).</p>
+        {(s.paymentDiscounts || []).map((r) => (
+          <div key={r.id} className="rule-row">
+            <Switch checked={r.active} onChange={(active) => setRule(r.id, { active })} label={r.active ? 'Ativo' : 'Desligado'} />
+            <div className="input-affix rule-pct">
+              <input inputMode="decimal" value={r.percent} onChange={(e) => setRule(r.id, { percent: Number(e.target.value.replace(',', '.').replace(/[^\d.]/g, '')) || 0 })} />
+              <span className="affix">%</span>
+            </div>
+            <div className="option-row">
+              {PAYMENT_METHODS.filter((m) => s.enabledMethods.includes(m.id)).map((m) => (
+                <button key={m.id} type="button" className={`chip chip-sm ${r.methods.includes(m.id) ? 'active' : ''}`} onClick={() => setRule(r.id, { methods: r.methods.includes(m.id) ? r.methods.filter((x) => x !== m.id) : [...r.methods, m.id] })}>{m.short}</button>
+              ))}
+            </div>
+            <button className="icon-btn" onClick={() => setS((x) => ({ ...x, paymentDiscounts: x.paymentDiscounts.filter((y) => y.id !== r.id) }))} aria-label="Remover regra"><Trash2 size={16} /></button>
+          </div>
+        ))}
+        <button className="btn btn-outline btn-sm" onClick={() => setS((x) => ({ ...x, paymentDiscounts: [...(x.paymentDiscounts || []), { id: Math.random().toString(36).slice(2), percent: 5, methods: ['pix'], active: true }] }))}>
+          <Plus size={16} /> Nova regra de desconto
+        </button>
+      </section>
+
+      <section className="card pad">
         <h3 className="card-title"><Cloud size={18} /> Nuvem (Supabase)</h3>
         <p className="muted small">
           Conectado como <b>{account?.email}</b>. {sync.online ? (sync.pending ? `${sync.pending} alterações sendo enviadas.` : 'Tudo salvo na nuvem.') : `Sem internet: ${sync.pending} alterações serão enviadas quando a conexão voltar.`}
@@ -224,6 +286,29 @@ export default function SettingsPage() {
           <button className="btn btn-ghost btn-danger-text" onClick={resetAll}>Apagar tudo e recomeçar</button>
         </div>
       </section>
+    </div>
+  )
+}
+
+function BrandsEditor({ brands, onChange }) {
+  const [text, setText] = useState('')
+  const add = () => {
+    const b = text.trim()
+    if (b && !brands.includes(b)) onChange([...brands, b])
+    setText('')
+  }
+  return (
+    <div className="option-row">
+      {brands.map((b) => (
+        <span key={b} className="chip active">
+          {b}
+          <button type="button" className="chip-x" onClick={() => onChange(brands.filter((x) => x !== b))} aria-label={`Remover ${b}`}><X size={13} /></button>
+        </span>
+      ))}
+      <div className="inline-add">
+        <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Nova bandeira" onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), add())} />
+        <button type="button" className="icon-btn" onClick={add} aria-label="Adicionar bandeira"><Plus size={16} /></button>
+      </div>
     </div>
   )
 }
