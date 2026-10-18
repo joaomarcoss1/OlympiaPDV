@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ShoppingBag, Trash2, Truck, X, Lock, CheckCircle2, Printer, PackageSearch, ChevronUp, Percent, PencilLine } from 'lucide-react'
+import { ShoppingBag, Trash2, Truck, X, Lock, CheckCircle2, Printer, PackageSearch, ChevronUp, Percent, PencilLine, ArrowLeft, ChevronRight } from 'lucide-react'
 import { useStore } from '../store/StoreContext'
 import { openSession, cartTotals, finalizeSale, productStock, variantLabel, lowStockAfter, lowStockLimit } from '../store/model'
 import { SearchInput, Stepper, Thumb, MoneyInput, Segmented, Field, Empty, ColorDot, Modal } from '../components/ui'
@@ -51,7 +51,6 @@ export default function Pdv() {
   const { settings } = db
   const brands = useMemo(() => Object.fromEntries(db.brands.map((b) => [b.id, b.name])), [db.brands])
   const topCats = db.categories.filter((c) => !c.parentId)
-  const usedTypes = (db.productTypes || []).filter((t) => db.products.some((p) => p.active && p.typeId === t.id))
   // Ao editar uma venda, as peças dela voltam ao estoque quando a edição é concluída.
   const returned = cart.editing?.returned || {}
 
@@ -67,7 +66,7 @@ export default function Pdv() {
     return db.products.filter((p) => {
       if (!p.active) return false
       if (type && p.typeId !== type) return false
-      if (cat && p.categoryId !== cat) return false
+      if (cat === '__none' ? p.categoryId : cat && p.categoryId !== cat) return false
       if (sub && p.subcategoryId !== sub) return false
       if (!t) return true
       const hay = normalize([p.name, p.sku, p.barcode, brands[p.brandId], ...p.variants.map((v) => v.sku)].join(' '))
@@ -231,22 +230,6 @@ export default function Pdv() {
 
   return (
     <div className="pdv">
-      <nav className="pdv-filters" aria-label="Filtros">
-        <button className={`filter-item ${!cat && !type ? 'active' : ''}`} onClick={() => { setCat(null); setSub(null); setType(null) }}>Todos os produtos</button>
-        {usedTypes.length > 0 && <div className="filter-title">Tipo de produto</div>}
-        {usedTypes.map((t) => (
-          <button key={t.id} className={`filter-item ${type === t.id ? 'active' : ''}`} onClick={() => setType(type === t.id ? null : t.id)}>{t.name}</button>
-        ))}
-        {topCats.length > 0 && <div className="filter-title">Categorias</div>}
-        {topCats.map((c) => (
-          <div key={c.id}>
-            <button className={`filter-item ${cat === c.id && !sub ? 'active' : ''}`} onClick={() => { setCat(cat === c.id && !sub ? null : c.id); setSub(null) }}>{c.name}</button>
-            {cat === c.id && db.categories.filter((x) => x.parentId === c.id).map((x) => (
-              <button key={x.id} className={`filter-item filter-sub ${sub === x.id ? 'active' : ''}`} onClick={() => setSub(sub === x.id ? null : x.id)}>{x.name}</button>
-            ))}
-          </div>
-        ))}
-      </nav>
       <section className="pdv-catalog">
         {!session && (
           <div className="banner banner-warn">
@@ -266,6 +249,27 @@ export default function Pdv() {
             className="search-lg"
           />
         </div>
+        {!query.trim() && !cat && !type ? (
+          <CategoryHome db={db} onCategory={(id) => { setCat(id); setSub(null) }} onType={setType} />
+        ) : (
+          <>
+            {!query.trim() && (
+              <div className="cat-header">
+                <button className="btn btn-ghost btn-sm" onClick={() => { setCat(null); setSub(null); setType(null) }}><ArrowLeft size={16} /> Categorias</button>
+                <h2>{cat === '__none' ? 'Sem categoria' : cat ? db.categories.find((c) => c.id === cat)?.name : db.productTypes.find((t) => t.id === type)?.name}</h2>
+              </div>
+            )}
+            {!query.trim() && cat && cat !== '__none' && db.categories.some((c) => c.parentId === cat) && (
+              <div className="sub-tiles">
+                <button className={`sub-tile ${!sub ? 'active' : ''}`} onClick={() => setSub(null)}>Todas</button>
+                {db.categories.filter((c) => c.parentId === cat).map((c) => (
+                  <button key={c.id} className={`sub-tile ${sub === c.id ? 'active' : ''}`} onClick={() => setSub(sub === c.id ? null : c.id)}>
+                    {c.name}
+                    <span>{db.products.filter((p) => p.active && p.subcategoryId === c.id).length}</span>
+                  </button>
+                ))}
+              </div>
+            )}
         {products.length === 0 ? (
           <Empty icon={<PackageSearch size={28} />} title="Nenhum produto encontrado">
             Tente outro termo ou limpe os filtros.
@@ -295,6 +299,8 @@ export default function Pdv() {
               )
             })}
           </div>
+        )}
+          </>
         )}
       </section>
 
@@ -536,5 +542,44 @@ function SaleDone({ sale, onClose }) {
         </button>
       </div>
     </Modal>
+  )
+}
+
+// Tela inicial da venda: categorias primeiro; ao tocar, abre subcategorias e produtos.
+function CategoryHome({ db, onCategory, onType }) {
+  const active = db.products.filter((p) => p.active)
+  const tops = db.categories.filter((c) => !c.parentId)
+  const uncategorized = active.filter((p) => !p.categoryId).length
+  const types = (db.productTypes || []).filter((t) => active.some((p) => p.typeId === t.id))
+  return (
+    <div className="cat-home">
+      {types.length > 1 && (
+        <div className="type-chips">
+          <span className="muted small">Tipo de produto:</span>
+          {types.map((t) => <button key={t.id} className="chip chip-sm" onClick={() => onType(t.id)}>{t.name}</button>)}
+        </div>
+      )}
+      <div className="cat-grid">
+        {tops.map((c) => {
+          const subs = db.categories.filter((x) => x.parentId === c.id)
+          const count = active.filter((p) => p.categoryId === c.id).length
+          return (
+            <button key={c.id} className="cat-tile" onClick={() => onCategory(c.id)}>
+              <span className="cat-name">{c.name}</span>
+              <span className="cat-subs">{subs.length ? subs.map((x) => x.name).join(' · ') : 'Sem subcategorias'}</span>
+              <span className="cat-foot">{count} {count === 1 ? 'produto' : 'produtos'} <ChevronRight size={16} /></span>
+            </button>
+          )
+        })}
+        {uncategorized > 0 && (
+          <button className="cat-tile cat-tile-muted" onClick={() => onCategory('__none')}>
+            <span className="cat-name">Sem categoria</span>
+            <span className="cat-subs">Produtos ainda não organizados</span>
+            <span className="cat-foot">{uncategorized} {uncategorized === 1 ? 'produto' : 'produtos'} <ChevronRight size={16} /></span>
+          </button>
+        )}
+      </div>
+      {!tops.length && !uncategorized && <Empty icon={<PackageSearch size={28} />} title="Nenhum produto cadastrado ainda" />}
+    </div>
   )
 }
